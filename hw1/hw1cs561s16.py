@@ -7,6 +7,10 @@
 import argparse
 from pprint import pprint
 
+
+NEXT_STATE_FILE = "next_state.txt"
+LOG_FILE = "traverse_log.txt"
+
 class SquirrelProblem(object):
     '''
     Squirrel Problem stated by Home work 1 of USC CSCI 561 - Spring 2016
@@ -35,13 +39,18 @@ class SquirrelProblem(object):
                     self.board[i][j][1] = line[j]
 
 
-    def printCurrentState(self, debug=True):
+    def printCurrentState(self, debug=True, fileName=None):
         '''
         Prints current state of the board to console
         :return:
         '''
         out_format = lambda cell: '  %2d|%s' % (cell[0], cell[1])  if debug else cell[1]
-        print('\n'.join([''.join([out_format(cell) for cell in row]) for row in self.board]))
+        res = '\n'.join([''.join([out_format(cell) for cell in row]) for row in self.board])
+        if fileName:
+            with open(fileName, 'w') as w:
+                w.write(res)
+        else:
+            print(res)
 
 
     def getSimpleHeuristic(self):
@@ -131,6 +140,7 @@ class SquirrelProblem(object):
             self.takeOver(pos[0], pos[1])
         #else: no available slot, die
 
+
     def miniMax(self):
         print("Mini Max - Not implemented")
 
@@ -138,6 +148,11 @@ class SquirrelProblem(object):
         print("Alpha - Beta Not implemented")
 
     def nextMove(self, algorithm):
+        '''
+        Makes the next move as per the algorithm
+        :param algorithm: the strategy for next move
+        :return:
+        '''
         if algorithm == 1:
             self.greedyBestFirstSearch()
         elif algorithm == 2:
@@ -147,6 +162,20 @@ class SquirrelProblem(object):
         else:
             raise Exception("Algorithm %d is unknown!" % algorithm)
 
+    def printResult(self, debug=False):
+        '''
+        prints the result to files as per problem description
+        :param debug:
+        :return:
+        '''
+        self.printCurrentState(debug=debug, fileName=NEXT_STATE_FILE)
+        logAvailable = self.nextMoveAlgorithm != 1
+
+        if logAvailable:
+            #FIXME: print log
+            print("Log printing not implemented")
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CSCI-561 - HW 1 Solutions - by Thamme Gowda N.')
     parser = argparse.ArgumentParser(description='Description of your program')
@@ -154,4 +183,5 @@ if __name__ == '__main__':
     args = vars(parser.parse_args())
     problem = SquirrelProblem(args['input'])
     problem.nextMove(problem.nextMoveAlgorithm)
+    problem.printResult()
     print("Done")
