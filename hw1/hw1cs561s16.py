@@ -25,27 +25,29 @@ class SquirrelProblem(object):
             self.myPiece = lines[1].strip()
             self.oppPiece = 'O' if self.myPiece == 'X' else 'X'
 
-            self.board = []                              # n x n board. each cell has [value, playerSign]
-
             # line 3 to 7 are board scores
-            for i in range(self.boardSize):
-                row = [[int(i), None] for i in lines[3 + i].strip().split()]
-                self.board.append(row)
+            # n x n board. each cell has value
+            self.costs = [[int(j) for j in lines[3 + i].strip().split()]
+                          for i in range(self.boardSize)]
 
             # lines 8 to 12 are positions
-            for i in range(self.boardSize):
-                line = lines[8 + i].strip()
-                for j in range(self.boardSize):
-                    self.board[i][j][1] = line[j]
+            # # n x n board. each cell has playerSign
+            self.state = [[j for j in lines[8 + i].strip()]
+                          for i in range(self.boardSize)]
 
 
-    def printCurrentState(self, debug=True, fileName=None):
+    def printState(self, state, debug=True, fileName=None):
         '''
         Prints current state of the board to console
         :return:
         '''
-        out_format = lambda cell: '  %2d|%s' % (cell[0], cell[1])  if debug else cell[1]
-        res = '\n'.join([''.join([out_format(cell) for cell in row]) for row in self.board])
+        out_format = lambda i, j: '  %2d|%s' % (self.costs[i][j], state[i][j])\
+            if debug else self.state[i][j]
+        res = ""
+        for i in range(self.boardSize):
+            for j in range(self.boardSize):
+                res += out_format(i, j)
+            res += "\n"
         if fileName:
             with open(fileName, 'w') as w:
                 w.write(res)
@@ -62,26 +64,24 @@ class SquirrelProblem(object):
         heuristic = [[0 for col in range(self.boardSize)]
                       for row in range(self.boardSize)]
 
-        # possible moves
-        possibleMoves = 0
         for i in range(self.boardSize):
             for j in range(self.boardSize):
-                if self.board[i][j][1] == '*':                     # empty cell else: it's owned by somebody
-                    heuristic[i][j] = self.board[i][j][0]         # Sneak, The value of the cell
+                if self.state[i][j] == '*':                     # empty cell else: it's owned by somebody
+                    heuristic[i][j] = self.costs[i][j]         # Sneak, The value of the cell
                     # checking if this can be a raid
                     # left raid possible ?
-                    if i > 0 and self.board[i-1][j][1] == self.oppPiece:
-                        heuristic[i][j] += self.board[i-1][j][0]     # Strike left
+                    if i > 0 and self.state[i-1][j] == self.oppPiece:
+                        heuristic[i][j] += self.costs[i-1][j]     # Strike left
                     # right raid possible?
-                    if i < self.boardSize - 1 and self.board[i+1][j][1] == self.oppPiece:
-                        heuristic[i][j] += self.board[i+1][j][0]     # Strike right
+                    if i < self.boardSize - 1 and self.state[i+1][j] == self.oppPiece:
+                        heuristic[i][j] += self.costs[i+1][j]     # Strike right
 
                     # up raid possible?
-                    if j > 0 and self.board[i][j-1][1] == self.oppPiece:
-                        heuristic[i][j] += self.board[i][j-1][0]     # Strike Up
+                    if j > 0 and self.state[i][j-1] == self.oppPiece:
+                        heuristic[i][j] += self.costs[i][j-1]     # Strike Up
                     # Down raid possible?
-                    if j < self.boardSize - 1 and self.board[i][j+1][1] == self.oppPiece:
-                        heuristic[i][j] += self.board[i][j+1][0]     # Strike Down
+                    if j < self.boardSize - 1 and self.state[i][j+1] == self.oppPiece:
+                        heuristic[i][j] += self.costs[i][j+1]     # Strike Down
         return heuristic
 
     def takeOver(self, row, col):
@@ -93,30 +93,30 @@ class SquirrelProblem(object):
         '''
         i, j = row, col
         myGain, oppLoss = 0, 0
-        if self.board[i][j][1] == self.emptyCell:
+        if self.state[i][j] == self.emptyCell:
 
             # checking if this can be a raid
             # left raid possible ?
             raidScore = 0
-            if i > 0 and self.board[i-1][j][1] == self.oppPiece:
-                raidScore  += self.board[i-1][j][0]
+            if i > 0 and self.state[i-1][j] == self.oppPiece:
+                raidScore  += self.costs[i-1][j]
             # right raid possible?
-            if i < self.boardSize - 1 and self.board[i+1][j][1] == self.oppPiece:
-                raidScore  += self.board[i+1][j][0]
+            if i < self.boardSize - 1 and self.state[i+1][j] == self.oppPiece:
+                raidScore  += self.costs[i+1][j]
             # up raid possible?
-            if j > 0 and self.board[i][j-1][1] == self.oppPiece:
-                raidScore  += self.board[i][j-1][0]
+            if j > 0 and self.state[i][j-1] == self.oppPiece:
+                raidScore  += self.costs[i][j-1]
             # Down raid possible?
-            if j < self.boardSize - 1 and self.board[i][j+1][1] == self.oppPiece:
-                raidScore  += self.board[i][j+1][0]
+            if j < self.boardSize - 1 and self.state[i][j+1] == self.oppPiece:
+                raidScore  += self.costs[i][j+1]
 
             #raid score is a gain for me and loss for opponent
             myGain = raidScore
             oppLoss = raidScore
 
             # I own this cell now. No longer empty
-            self.board[i][j][1] = self.myPiece
-            myGain += self.board[i][j][0]
+            self.state[i][j] = self.myPiece
+            myGain += self.costs[i][j]
 
         else:
             raise Exception("I don't break Game Rules! The cell is not empty")
@@ -162,13 +162,25 @@ class SquirrelProblem(object):
         else:
             raise Exception("Algorithm %d is unknown!" % algorithm)
 
+    def readStateFile(self, fileName):
+        with open(fileName) as f:
+            return [[j for j in next(f).strip()] for _ in range(self.boardSize)]
+
+    def areStatesSame(self, state1, state2):
+        for i in range(self.boardSize):
+            for j in range(self.boardSize):
+                if state1[i][j] != state2[i][j]:
+                    return False
+        return True
+
+
     def printResult(self, debug=False):
         '''
         prints the result to files as per problem description
         :param debug:
         :return:
         '''
-        self.printCurrentState(debug=debug, fileName=NEXT_STATE_FILE)
+        self.printState(debug=debug, state=self.state, fileName=NEXT_STATE_FILE)
         logAvailable = self.nextMoveAlgorithm != 1
 
         if logAvailable:
@@ -178,10 +190,19 @@ class SquirrelProblem(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CSCI-561 - HW 1 Solutions - by Thamme Gowda N.')
-    parser = argparse.ArgumentParser(description='Description of your program')
     parser.add_argument('-i','--input', help='Input File', required=True)
+    parser.add_argument('-t','--test', help='Test/Terminal File', required=False)
     args = vars(parser.parse_args())
     problem = SquirrelProblem(args['input'])
     problem.nextMove(problem.nextMoveAlgorithm)
+    if 'test' in args:
+        terminalState = problem.readStateFile(args['test'])
+        res = problem.areStatesSame(problem.state, terminalState)
+        print("Test Passed?: %s" % res)
+        if not res:
+            print("Error:\n Expected :\n")
+            problem.printState(terminalState)
+            print("But actual :\n")
+            problem.printState(problem.state)
+
     problem.printResult()
-    print("Done")
