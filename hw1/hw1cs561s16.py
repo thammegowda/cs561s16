@@ -13,6 +13,7 @@ from os import path
 from decimal import Decimal
 import string
 
+
 NEXT_STATE_FILE = "next_state.txt"
 LOG_FILE = "traverse_log.txt"
 MAX_INT = Decimal("inf")
@@ -184,7 +185,7 @@ class SquirrelProblem(object):
             raid = False
             oppCells = []
             for i, j in adjacentCells:
-                if 0 < i and i < (self.boardSize - 1) and  0 < j and j < (self.boardSize - 1):
+                if 0 <= i < self.boardSize and  0 <= j < self.boardSize:
                     if state[i][j] == oppPiece:
                         oppCells.append((i, j))
                     elif state[i][j] == playerPiece:
@@ -228,12 +229,11 @@ class SquirrelProblem(object):
 
 
     def miniMax(self):
-        solver = MiniMaxSolver(self)
-        root = solver.solve(self.state)
-        #root.prettyPrint()
-        #paths = root.leafPaths()
-        #for path in paths:
-        #    print(path)
+        with open(LOG_FILE, 'w') as logfile:
+            root = MiniMaxSolver(self, logfile).solve(self.state)
+            move = root.nextMove
+            self.moveToCell(self.state, move.pos[0], move.pos[1], move.piece)
+
 
     def alphaBetaPruning(self):
         print("Alpha - Beta Not implemented")
@@ -275,20 +275,6 @@ class SquirrelProblem(object):
                 return False
         return True
 
-    def saveResult(self, debug=False):
-        '''
-        Saves the result to files as per problem description
-        :param debug:
-        :return:
-        '''
-        self.printState(debug=debug, state=self.state, fileName=NEXT_STATE_FILE)
-        logAvailable = self.nextMoveAlgorithm != 1
-
-        if logAvailable:
-            #FIXME: print log
-            print("Log printing not implemented")
-
-
 class Node(object):
 
     def __init__(self, score, pos, piece, depth=0, parent=None):
@@ -316,8 +302,6 @@ class Node(object):
                 self.children[i].__prettyPrint(prefix + formatstring, False)
             self.children[-1].__prettyPrint(prefix + formatstring, True)
 
-
-
     def leafPaths(self, prefix=None):
         res = tracklogformat(self.pos[0], self.pos[1], self.depth, self.score)
         if prefix:
@@ -331,17 +315,17 @@ class Node(object):
 
 class MiniMaxSolver(object):
 
-    def __init__(self, problem):
+    def __init__(self, problem, logfile):
         self.problem = problem
+        self.logfile = logfile
         self.evaluateState = problem.evaluateState
         self.maxPlayer = problem.myPiece
         self.minPlayer = problem.oppPiece
-        self.tracklog = []
         self.maxdepth = problem.cutoff
 
     def solve(self, state):
         # first turn is my players'. My player is maxPlayer
-        print("Node,Depth,Value")
+        self.logfile.write("Node,Depth,Value")
         root = Node(MIN_INT, (None, None), None)
         self.maximum(state, root)
         return root
@@ -350,33 +334,28 @@ class MiniMaxSolver(object):
         cells = self.problem.findEmptyCells(state)
         if parent.depth == self.maxdepth or not cells:
             parent.score = self.problem.evaluateState(state)
-            print(tracklogNode(parent))
         else:
-            print(tracklogNode(parent))
+            self.logfile.write("\n" + tracklogNode(parent))
             for x, (i, j) in enumerate(cells):
-                if i == 2 and j == 4:
-                    # error case
-                    pass
                 undoMoves = self.problem.moveToCell(state, i, j, self.maxPlayer)    # max's move
                 child = Node(MAX_INT, (i, j), self.maxPlayer)
                 parent.add_child(child)
-                child.score = self.minimum(state, child)                     # turn goes to min player
+                child.score = self.minimum(state, child)              # turn goes to min player
                 if child.score > parent.score:
                     parent.score = child.score
                     parent.nextMove = child
-                if x < len(cells) -1: # for all except the last one
-                    print(tracklogNode(parent))
+                if x < len(cells) - 1:                                 # for all except the last one
+                    self.logfile.write("\n" + tracklogNode(parent))
                 self.problem.applyMoves(state, undoMoves)
-            print(tracklogNode(parent))
+        self.logfile.write("\n" + tracklogNode(parent))
         return parent.score
 
     def minimum(self, state, parent):
         cells = self.problem.findEmptyCells(state)
         if parent.depth == self.maxdepth or not cells:
             parent.score = self.problem.evaluateState(state)
-            print(tracklogNode(parent))
         else:
-            print(tracklogNode(parent))
+            self.logfile.write("\n" + tracklogNode(parent))
             for x, (i, j) in enumerate(cells):
                 undoMoves = self.problem.moveToCell(state, i, j, self.minPlayer)     # min's move
                 child = Node(MIN_INT, (i, j), self.minPlayer)
@@ -386,9 +365,9 @@ class MiniMaxSolver(object):
                     parent.score = child.score
                     parent.nextMove = child
                 if x < len(cells) -1: # for all except the last one
-                    print(tracklogNode(parent))
+                    self.logfile.write("\n" + tracklogNode(parent))
                 self.problem.applyMoves(state, undoMoves)
-            print(tracklogNode(parent))
+        self.logfile.write("\n" + tracklogNode(parent))
         return parent.score
 
 if __name__ == '__main__':
@@ -400,20 +379,29 @@ if __name__ == '__main__':
 
     problem = SquirrelProblem(args['input'])
     problem.nextMove(problem.nextMoveAlgorithm)
+    problem.printState(debug=False, state=problem.state, fileName=NEXT_STATE_FILE)
 
+    # below is for testing
     testfile = None
+    testLogFile = None
     if args['test']: # test was requested
         tmp = path.join(path.dirname(path.abspath(args['input'])), NEXT_STATE_FILE)
         if path.exists(tmp): # see if there is a test file
             testfile = tmp
+        tmp = path.join(path.dirname(path.abspath(args['input'])),LOG_FILE)
+        if path.exists(tmp): # see if there is a test file
+            testLogFile = tmp
     if 'testfile' in args and args['testfile']:
         testfile = args['testfile']
     if testfile:
         terminalState = problem.readStateFile(testfile, problem.boardSize)
         res = problem.areStatesSame(problem.state, terminalState)
-        print("Test Passed?: %s" % res)
+        print("Next State Same ?: %s" % res)
         if not res:
             print("Error:\n Expected state:\n")
             problem.printState(terminalState)
             print("But actual state:\n")
             problem.printState(problem.state)
+    if 2 <= problem.nextMoveAlgorithm <= 3 and testLogFile:
+        print("Log Matched ? %s " % "Not implemented")
+
