@@ -5,6 +5,7 @@
 # Course : USC CSCI 561 Foundations of Artificial Intelligence
 # Topic  : Home work 1 : Squirrel Fight Game Strategy
 
+from __future__ import print_function
 import argparse
 from copy import deepcopy
 from pprint import pprint
@@ -12,6 +13,7 @@ import sys
 from os import path
 from decimal import Decimal
 import string
+
 
 
 NEXT_STATE_FILE = "next_state.txt"
@@ -29,9 +31,12 @@ def tracklogformat(row, col, depth, val):
     val = str(val)
     return "%s,%s,%s" % (node, depth, val)
 
-def tracklogNode(node):
+def tracklogNode(node, alphaBeta=False):
     name = "root" if node.depth == 0 else "%s%s" % (COLNAMES[node.pos[1]], ROWNAMES[node.pos[0]])
-    return "%s,%s,%s" % (name, node.depth, node.score)
+    if alphaBeta:
+        return "%s,%s,%s,%s,%s" % (name, node.depth, node.score, node.alpha, node.beta)
+    else:
+        return "%s,%s,%s" % (name, node.depth, node.score)
 
 
 class SquirrelProblem(object):
@@ -234,8 +239,12 @@ class SquirrelProblem(object):
             move = root.nextMove
             self.moveToCell(self.state, move.pos[0], move.pos[1], move.piece)
 
-
     def alphaBetaPruning(self):
+        logfile = Node(1, 0, 0)
+        logfile.write = lambda x: print(x.strip())
+        root = AlphaBetaSolver(self, logfile).solve(self.state)
+        #move = root.nextMove
+        #self.moveToCell(self.state, move.pos[0], move.pos[1], move.piece)
         print("Alpha - Beta Not implemented")
 
     def nextMove(self, algorithm):
@@ -275,6 +284,7 @@ class SquirrelProblem(object):
                 return False
         return True
 
+
 class Node(object):
 
     def __init__(self, score, pos, piece, depth=0, parent=None):
@@ -301,17 +311,6 @@ class Node(object):
             for i in range(0, len(self.children) - 1):
                 self.children[i].__prettyPrint(prefix + formatstring, False)
             self.children[-1].__prettyPrint(prefix + formatstring, True)
-
-    def leafPaths(self, prefix=None):
-        res = tracklogformat(self.pos[0], self.pos[1], self.depth, self.score)
-        if prefix:
-            res = prefix + "\n" + res
-        if self.children: # has children, recurse
-            for c in self.children:
-                for i in c.leafPaths(res):
-                    yield i
-        else:
-            yield res
 
 class MiniMaxSolver(object):
 
@@ -369,6 +368,65 @@ class MiniMaxSolver(object):
                 self.problem.applyMoves(state, undoMoves)
         self.logfile.write("\n" + tracklogNode(parent))
         return parent.score
+
+class AlphaBetaSolver(MiniMaxSolver):
+
+    def solve(self, state):
+        self.logfile.write("Node,Depth,Value,Alpha,Beta")
+        root = Node(MIN_INT, (None, None), None)
+        root.alpha = MIN_INT
+        root.beta = MAX_INT
+        self.maximum(state, root)
+        return root
+
+    def maximum(self, state, parent):
+        cells = self.problem.findEmptyCells(state)
+        if parent.depth == self.maxdepth or not cells:
+            parent.score = self.problem.evaluateState(state)
+        else:
+            self.logfile.write("\n" + tracklogNode(parent, alphaBeta=True))
+            for x, (i, j) in enumerate(cells):
+                undoMoves = self.problem.moveToCell(state, i, j, self.maxPlayer)    # max's move
+                child = Node(MAX_INT, (i, j), self.maxPlayer)
+                child.alpha = parent.alpha
+                child.beta = parent.beta
+                parent.add_child(child)
+                child.score = self.minimum(state, child)              # turn goes to min player
+                if child.score > parent.score:
+                    parent.score = child.score
+                    parent.nextMove = child
+                if child.score > parent.alpha:
+                    parent.alpha = child.score
+                if x < len(cells) - 1:                                 # for all except the last one
+                    self.logfile.write("\n" + tracklogNode(parent, alphaBeta=True))
+                self.problem.applyMoves(state, undoMoves)
+        self.logfile.write("\n" + tracklogNode(parent, alphaBeta=True))
+        return parent.score
+
+    def minimum(self, state, parent):
+        cells = self.problem.findEmptyCells(state)
+        if parent.depth == self.maxdepth or not cells:
+            parent.score = self.problem.evaluateState(state)
+        else:
+            self.logfile.write("\n" + tracklogNode(parent, True))
+            for x, (i, j) in enumerate(cells):
+                undoMoves = self.problem.moveToCell(state, i, j, self.minPlayer)     # min's move
+                child = Node(MIN_INT, (i, j), self.minPlayer)
+                child.alpha = parent.alpha
+                child.beta = parent.beta
+                parent.add_child(child)
+                self.maximum(state, child)                             # turn goes to max, depth reduced by 1
+                if child.score < parent.score:
+                    parent.score = child.score
+                    parent.nextMove = child
+                if child.score < parent.beta:
+                    parent.beta = child.score
+                if x < len(cells) -1: # for all except the last one
+                    self.logfile.write("\n" + tracklogNode(parent, True))
+                self.problem.applyMoves(state, undoMoves)
+        self.logfile.write("\n" + tracklogNode(parent, True))
+        return parent.score
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CSCI-561 - HW 1 Solutions - by Thamme Gowda N.')
