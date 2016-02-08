@@ -7,13 +7,9 @@
 
 from __future__ import print_function
 import argparse
-from copy import deepcopy
-from pprint import pprint
-import sys
 from os import path
 from decimal import Decimal
 import string
-
 
 
 NEXT_STATE_FILE = "next_state.txt"
@@ -51,20 +47,32 @@ class SquirrelProblem(object):
 
         with open(prob_file) as f:
             lines = f.readlines()
-            self.nextMoveAlgorithm = int(lines[0].strip())
-            self.myPiece = lines[1].strip()
-            self.oppPiece = self.opponent(self.myPiece)
-            self.cutoff = int(lines[2].strip())
+            count = 0
+            self.strategy = int(lines[0].strip())
+            if self.strategy < 4:
+                self.myPiece = lines[1].strip()
+                self.oppPiece = self.opponent(self.myPiece)
+                self.cutoff = int(lines[2].strip())
+                count = 3
+            else:
+                self.firstPlayer = lines[1].strip()
+                self.firstPlayerAlgo = int(lines[2].strip())
+                self.firstPlayerCutOff = int(lines[3].strip())
+                self.secondPlayer = lines[4].strip()
+                self.secondPlayerAlgo = int(lines[5].strip())
+                self.secondPlayerCutOff = int(lines[6].strip())
+                count = 7
 
             # line 3 to 7 are board scores
             # n x n board. each cell has value
-            self.costs = [[int(j) for j in lines[3 + i].strip().split()]
+            self.costs = [[int(j) for j in lines[count + i].strip().split()]
                           for i in range(self.boardSize)]
-
+            count += self.boardSize
             # lines 8 to 12 are positions
             # # n x n board. each cell has playerSign
-            self.state = [[j for j in lines[8 + i].strip()]
-                          for i in range(self.boardSize)]
+            self.state = [[j for j in lines[count + i].strip()]
+                              for i in range(self.boardSize)]
+
 
 
     def printState(self, state, debug=True, fileName=None):
@@ -240,12 +248,17 @@ class SquirrelProblem(object):
             self.moveToCell(self.state, move.pos[0], move.pos[1], move.piece)
 
     def alphaBetaPruning(self):
-        logfile = Node(1, 0, 0)
-        logfile.write = lambda x: print(x.strip())
-        root = AlphaBetaSolver(self, logfile).solve(self.state)
-        #move = root.nextMove
-        #self.moveToCell(self.state, move.pos[0], move.pos[1], move.piece)
-        print("Alpha - Beta Not implemented")
+        #logfile = Node(1, 0, 0)
+        #logfile.write = lambda x: print(x.strip())
+        with open(LOG_FILE, 'w') as logfile:
+            root = AlphaBetaSolver(self, logfile).solve(self.state)
+            move = root.nextMove
+            self.moveToCell(self.state, move.pos[0], move.pos[1], move.piece)
+        print("Alpha - Beta working on")
+
+    def twoPlayerMode(self):
+        print("Not implemented yet!")
+
 
     def nextMove(self, algorithm):
         '''
@@ -259,6 +272,8 @@ class SquirrelProblem(object):
             self.miniMax()
         elif algorithm == 3:
             self.alphaBetaPruning()
+        elif algorithm == 4:
+            self.twoPlayerMode()
         else:
             raise Exception("Algorithm %d is unknown!" % algorithm)
 
@@ -373,9 +388,10 @@ class AlphaBetaSolver(MiniMaxSolver):
 
     def solve(self, state):
         self.logfile.write("Node,Depth,Value,Alpha,Beta")
-        root = Node(MIN_INT, (None, None), None)
-        root.alpha = MIN_INT
-        root.beta = MAX_INT
+        root = Node(MIN_INT, (None, None), None) # this node for the next move, which is maximizer
+                                                 # The worst possible value for him is -Infinity
+        root.alpha = MIN_INT                     # Max value, we dont know yet, so -Infinity
+        root.beta = MAX_INT                      # Min value, we dont know yet, so +Infinity
         self.maximum(state, root)
         return root
 
@@ -387,19 +403,26 @@ class AlphaBetaSolver(MiniMaxSolver):
             self.logfile.write("\n" + tracklogNode(parent, alphaBeta=True))
             for x, (i, j) in enumerate(cells):
                 undoMoves = self.problem.moveToCell(state, i, j, self.maxPlayer)    # max's move
-                child = Node(MAX_INT, (i, j), self.maxPlayer)
-                child.alpha = parent.alpha
+                child = Node(MAX_INT, (i, j), self.maxPlayer)     # this node is for the next move, which is minimizer
+                                                                  # The worst possible value for him is +infinity
+                child.alpha = parent.alpha                        # Inherit alpha beta
                 child.beta = parent.beta
-                parent.add_child(child)
-                child.score = self.minimum(state, child)              # turn goes to min player
+                parent.add_child(child)                           #dept gets incremented
+                self.minimum(state, child)              # turn goes to min player
+                self.problem.applyMoves(state, undoMoves)       #undo
+
                 if child.score > parent.score:
                     parent.score = child.score
                     parent.nextMove = child
+                if child.score > parent.beta: # intuition : Min player (parent) wont let this happen
+                    #self.logfile.write("\n==== Cutting off in max ===")
+                    break
                 if child.score > parent.alpha:
                     parent.alpha = child.score
+
                 if x < len(cells) - 1:                                 # for all except the last one
                     self.logfile.write("\n" + tracklogNode(parent, alphaBeta=True))
-                self.problem.applyMoves(state, undoMoves)
+
         self.logfile.write("\n" + tracklogNode(parent, alphaBeta=True))
         return parent.score
 
@@ -416,14 +439,19 @@ class AlphaBetaSolver(MiniMaxSolver):
                 child.beta = parent.beta
                 parent.add_child(child)
                 self.maximum(state, child)                             # turn goes to max, depth reduced by 1
+                self.problem.applyMoves(state, undoMoves)
                 if child.score < parent.score:
                     parent.score = child.score
                     parent.nextMove = child
+                if child.score < parent.alpha:
+                    #self.logfile.write("\n==== Cutting off in minimum ===")
+                    break
                 if child.score < parent.beta:
                     parent.beta = child.score
+
                 if x < len(cells) -1: # for all except the last one
                     self.logfile.write("\n" + tracklogNode(parent, True))
-                self.problem.applyMoves(state, undoMoves)
+
         self.logfile.write("\n" + tracklogNode(parent, True))
         return parent.score
 
@@ -436,7 +464,7 @@ if __name__ == '__main__':
     args = vars(parser.parse_args())
 
     problem = SquirrelProblem(args['input'])
-    problem.nextMove(problem.nextMoveAlgorithm)
+    problem.nextMove(problem.strategy)
     problem.printState(debug=False, state=problem.state, fileName=NEXT_STATE_FILE)
 
     # below is for testing
@@ -460,6 +488,6 @@ if __name__ == '__main__':
             problem.printState(terminalState)
             print("But actual state:\n")
             problem.printState(problem.state)
-    if 2 <= problem.nextMoveAlgorithm <= 3 and testLogFile:
+    if 2 <= problem.strategy <= 3 and testLogFile:
         print("Log Matched ? %s " % "Not implemented")
 
