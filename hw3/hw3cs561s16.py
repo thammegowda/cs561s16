@@ -1,4 +1,7 @@
 
+from copy import copy
+from copy import deepcopy
+from argparse import ArgumentParser
 
 # Tokens
 QRY_SEP = "******"
@@ -21,8 +24,9 @@ def key_of(value, var):
     return "%s%s" % (value, var)
 
 
-def format_float(val):
-    return "%.2f" % val
+def format_float(val, digits=2):
+    return "{0:.{1}f}".format(val, digits)
+
 
 def complement_value(value):
     if value == TRUE:
@@ -101,6 +105,9 @@ class DecisionNode(Node):
             tuple([key_of(complement_value(value), self.name)]): 0.0
         }
 
+    def undecide(self):
+        self.cpt = {}
+
 
 class Query(object):
 
@@ -115,6 +122,20 @@ class Query(object):
 
     def __repr__(self):
         return "%s (%s | %s)" % (self._type, self.query, self.given)
+
+    def decide(self, decisions):
+        changed = []
+        node_sets = [self.query]
+        if self.given:
+            node_sets.append(self.given)
+        for nodes in node_sets:
+            for i in range(0, len(nodes)):
+                if nodes[i][1:] in decisions:
+                    chars = list(nodes[i])   # because strings cant be modified inplace
+                    chars[0] = decisions[nodes[i][1:]]
+                    nodes[i] = "".join(chars)
+                    changed.append(nodes[i])
+        return changed
 
 
 class Parser(object):
@@ -232,12 +253,56 @@ class BayesNet(object):
             state = "{0:0{1}b}".format(i, len(nodes))
             key = []
             for j in range(0, len(state)):
-                key.append("{0}{1}".format('-' if state[j] == '0' else '+', nodes[j]))
+                key.append("{0}{1}".format(FALSE if state[j] == '0' else TRUE, nodes[j]))
             table[tuple(key)] = self.compute(key)
         return table
 
-    def compute_utility(self, q, prob):
-        print("Error : Compute Utility Not implemented %s" % q)
+    def compute_utility(self, q, table):
+        total_util = 0.0
+        for key, util in self.utility_node.cpt.items():
+            query = list(key)
+            given = copy(q.query)
+            if q.given:
+                given.extend(q.given)
+            new_q = Query(PROBABILITY, query, given)
+            p = self.compute_by_enumerate(new_q, table)
+            total_util += p * util
+        return total_util
+
+    def compute_max_utility(self, q):
+        max_util = 0.0
+
+        q_undecided = map(lambda y: y[1:], filter(lambda x: x[0] == UNDECIDED, q.nodes))        # query undecided
+        n_undecided = map(lambda y: y.name, filter(lambda x: not x.cpt, self.decision_nodes))   # network Undecided
+        h_undecided = set(n_undecided).difference(q_undecided)         # hidden undecided
+
+        undecided = []
+        undecided.extend(q_undecided)   # query vars first
+        undecided.extend(h_undecided)   # hidden vars last
+
+        rational_decisions = []
+        if undecided:
+            last_state = ""
+            for i in range(0, 2**len(undecided)):
+                state = "{0:0{1}b}".format(i, len(undecided))
+                decisions = {}
+                for j in range(0, len(state)):
+                    assign = FALSE if state[j] == '0' else TRUE
+                    self.index[undecided[j]].decide(assign)
+                    decisions[undecided[j]] = assign
+                table = self.build_jpd_table()
+                new_q = deepcopy(q)
+                choices = new_q.decide(decisions)
+                util = self.compute_utility(new_q, table)
+                if util > max_util:
+                    max_util = util
+                    rational_decisions = choices
+                last_state = state
+            for j in range(0, len(last_state)):
+                self.index[undecided[j]].undecide()
+        else:
+            max_util = self.compute_utility(q, self.build_jpd_table())
+        return max_util, rational_decisions
 
     def compute_by_enumerate(self, q, table):
         res = 0.0
@@ -249,32 +314,56 @@ class BayesNet(object):
                     break
             if select:
                 res += val
-        if q.given:   # Conditional probability given evidence
+        if q.given and res > 0.0:   # Conditional probability given evidence
             res /= self.compute_by_enumerate(Query(q._type, q.given), table)
         return res
 
-    def query(self, q, internal=False):
-        if q._type == MAX_EXP_UTILITY :
-            print("ERROR: Not implemented %s" % q)
-            return
+    def make_decisions(self, decisions):
+        for name, value in decisions.items():
+            self.index[name].decide(value)
 
+    def undo_decisions(self, decisions):
+        for name in decisions.keys():
+            self.index[name].undecide()
+
+    def query(self, q):
+        decisions = {}
         if self.decision_nodes:     # assign decisions as per Query
             assignments = dict(map(lambda x: (x[1:], x[0]), q.nodes))
             for dn in self.decision_nodes:
                 # print("Assign %s to %s" % (assignments[dn.name], dn.name))
-                dn.decide(assignments[dn.name])
+                if dn.name in assignments and assignments[dn.name] != UNDECIDED:
+                    decisions[dn.name] = assignments[dn.name]
+        self.make_decisions(decisions)
+        if q._type == MAX_EXP_UTILITY:
+            res, choices = self.compute_max_utility(q)
+            choices = map(lambda x: x[0], choices)
 
-        table = self.build_jpd_table()
-        res = self.compute_by_enumerate(q, table)
-        if not internal:
+            print("%s = %s, %s" % (q, choices, format_float(res, 0)))
+            res = "%s %s" % (" ".join(choices), format_float(res, 0))
+        else:
+            table = self.build_jpd_table()
+            res = None
             if q._type == PROBABILITY:
+                res = self.compute_by_enumerate(q, table)
                 print ("%s = %s" % (q, format_float(res)))
+                res = format_float(res, 2)
             elif q._type == EXP_UTILITY:
-                self.compute_utility(q, res)
+                res = self.compute_utility(q, table)
+                print("%s = %s" % (q, format_float(res, 0)))
+                res = format_float(res, 0)
+        self.undo_decisions(decisions)
         return res
 
 if __name__ == '__main__':
-    qs, net = Parser().parse("/home/tg/work/coursework/cs561/csci561s16/hw3/tests/sample02.txt")
-    for q in qs:
-        net.query(q)
-        pass
+    parser = ArgumentParser(description="CSCI561 Spring2016 HW3 Solution for Deciding under uncertainty" \
+                                        + " by Thamme Gowda (2074-669439)", version='1.0')
+    parser.add_argument("-i", "--input", help="Path to input file", required=True)
+    parser.add_argument("-o", "--output", help="Path to output file", required=False, default="output.txt")
+    args = vars(parser.parse_args())
+    qs, net = Parser().parse(args['input'])
+    with open(args['output'], 'w') as out:
+        for q in qs:
+            res = deepcopy(net).query(q)
+            out.write("%s" % res)
+            out.write("\n")
