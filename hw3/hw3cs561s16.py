@@ -1,9 +1,18 @@
+#!/usr/bin/env python
+#
+#  This file includes solutions for HW3 for CSCI 561 course offered at USC.edu in Spring 2016
+#  Student Name  : ThammeGowda Narayanaswamy
+#  Student ID    : 2074-6674-39
+#  Student Email : tnarayan@usc.edu
+#
+# Keywords : Bayes Network, Expected utility, Maximum expected utility, decision under uncertainty
+#
 
-from copy import copy
-from copy import deepcopy
+from copy import copy, deepcopy
 from argparse import ArgumentParser
+from decimal import Decimal
 
-# Tokens
+# Tokens in input file
 QRY_SEP = "******"
 NODE_SEP = "***"
 GIVEN = "|"
@@ -19,16 +28,44 @@ DEC_NODE = "decision"
 UTILITY_NODE = "utility"
 UNDECIDED = "?"
 
+# Global vars
+debug = False
 
 def key_of(value, var):
+    """
+    Key for index/dictionary
+    :param value: assignment
+    :param var:  variable
+    :return:
+    """
     return "%s%s" % (value, var)
 
 
 def format_float(val, digits=2):
-    return "{0:.{1}f}".format(val, digits)
+    """
+    Formats float number to stated precision after rounding it up
+    :param val: value
+    :param digits:  digits, default = 2
+    :return: string formatted from floating point value
+    """
+    # format = "%" + (".%d" % digits) + "f"
+    # return format % val
+    if digits == 0:
+        return "%d" % round(val)
+    rounder = ['0' for i in range(0, digits-1)]
+    rounder.append("1")
+    rounder.insert(0, ".")
+    rounder = "".join(rounder)
+    return str(Decimal(str(val)).quantize(Decimal(rounder)))
 
 
 def complement_value(value):
+    """
+    gets complemented assignment for given value
+    :param value: value who's complement shall be found
+    :return: complemented value
+    :raises Exception when complement is unknown
+    """
     if value == TRUE:
         return FALSE
     elif value == FALSE:
@@ -38,6 +75,9 @@ def complement_value(value):
 
 
 class Node(object):
+    """
+    Node class in bayes network
+    """
 
     def __init__(self, name, cpt, _type='normal'):
         """
@@ -75,14 +115,13 @@ class Node(object):
                 elif _type == UTILITY_NODE:
                     self.cpt[tuple(key)] = val          # Happened
 
-    def num_parents(self):
-        """
-        gets number of parents
-        :return: number of parents
-        """
-        return len(self.ordered_parents)
-
     def probability(self, value, theta):
+        """
+        Computes probability of this node
+        :param value: assignment/value for this node
+        :param theta: dictionary having assignments for its parents
+        :return: Conditional probability of this node
+        """
         if self._type == NORM_NODE or (self._type == DEC_NODE and self.cpt):
             key = []
             for parent in self.ordered_parents:
@@ -91,27 +130,48 @@ class Node(object):
             return self.cpt[tuple(key)]
         else:
             print("ERROR: %s%s not implemented %s" % (value, self.name, theta))
-            return 1.0      # FIXME:
+            return 1.0  # FIXME:
 
     def __repr__(self):
         return "(%s<%s>: %s :%s)" % (self.name, self._type, self.parents.keys(), self.cpt)
 
 
 class DecisionNode(Node):
-
+    """
+    Decision node with functionality for making and undoing decisions
+    """
     def decide(self, value):
+        """
+        Decides assignment for this node
+        :param value: assignment for this node
+        :return:
+        """
         self.cpt = {
             tuple([key_of(value, self.name)]): 1.0,
             tuple([key_of(complement_value(value), self.name)]): 0.0
         }
 
     def undecide(self):
+        """
+        Clears any previous decisions made
+        :return:
+        """
         self.cpt = {}
 
 
 class Query(object):
+    """
+    this class stores query model
+    """
 
     def __init__(self, _type, query, given=None):
+        """
+        Creates query
+        :param _type: query type = {P, EU, MEU}
+        :param query: query variables
+        :param given: evidence variables
+        :return:
+        """
         self._type = _type
         self.given = given
         self.query = query
@@ -124,6 +184,11 @@ class Query(object):
         return "%s (%s | %s)" % (self._type, self.query, self.given)
 
     def decide(self, decisions):
+        """
+        Updates assignment of undecided variables in query
+        :param decisions:
+        :return: variables whose values affected this decision
+        """
         changed = []
         node_sets = [self.query]
         if self.given:
@@ -139,11 +204,24 @@ class Query(object):
 
 
 class Parser(object):
+    """
+    This class hnows how to parse the input file. The implementation is specific to assignment instructions and format
+    """
 
     def tokenize(self, statement):
+        """
+        tokenizes a statement
+        :param statement: input statement
+        :return: list of tokens
+        """
         return statement.strip().split()
 
     def parse_cpt(self, cpt):
+        """
+        Parses conditional probability table and build bayesian Node
+        :param cpt: conditional probability table
+        :return: Node
+        """
         name = cpt[0][0]
         _type = UTILITY_NODE if name == UTILITY_NODE else DEC_NODE if cpt[1][0] == DEC_NODE else NORM_NODE
         head = cpt[0]
@@ -160,8 +238,13 @@ class Parser(object):
         else:
             print("Error: %s parsing not implemented" % _type)
 
-    def parse_query(self, qstr):
-        tokens = qstr.replace("(", " ").replace(")", " ").replace(",", " , ").strip().split()
+    def parse_query(self, statement):
+        """
+        Parses query
+        :param statement: query statement
+        :return: Query
+        """
+        tokens = statement.replace("(", " ").replace(")", " ").replace(",", " , ").strip().split()
         name = tokens[0]
         if name in (PROBABILITY, EXP_UTILITY, MAX_EXP_UTILITY):
             query, given = [], []
@@ -186,6 +269,11 @@ class Parser(object):
             raise Exception("Not implemented yet! %s" % name)
 
     def parse(self, in_file):
+        """
+        Parses input file
+        :param in_file: path to input file
+        :return: list of Query objects, BayesNet object
+        """
         queries = []
         net = BayesNet()
         with open(in_file) as reader:
@@ -212,14 +300,26 @@ class Parser(object):
 
 
 class BayesNet(object):
+    """
+    This class models a simple Bayes Network
+    """
 
     def __init__(self):
+        """
+        Creates Bayes Network
+        :return: instance of Bayes network
+        """
         self.index = {}
         self.topo_sort = []
         self.decision_nodes = []
         self.utility_node = None
 
     def add_node(self, node):
+        """
+        Adds a node to this bayes network
+        :param node: Node instance
+        :return:
+        """
         self.index[node.name] = node
         if node._type != UTILITY_NODE:
             self.topo_sort.append(node)
@@ -235,6 +335,11 @@ class BayesNet(object):
         return str(self.topo_sort)
 
     def compute(self, state):
+        """
+        Computes probability of a state
+        :param state: state
+        :return: probability of state
+        """
         res = 1.0
         theta = {}
         for state_val in state:
@@ -246,6 +351,10 @@ class BayesNet(object):
         return res
 
     def build_jpd_table(self):
+        """
+        Build joint probability table by enumerating all states
+        :return: table (i.e. dictionary of state_key:probability)
+        """
         nodes = map(lambda x: x.name, self.topo_sort)
         table = {}
 
@@ -258,6 +367,12 @@ class BayesNet(object):
         return table
 
     def compute_utility(self, q, table):
+        """
+        Computes utility of given state
+        :param q: query
+        :param table: JPT
+        :return: utility value
+        """
         total_util = 0.0
         for key, util in self.utility_node.cpt.items():
             query = list(key)
@@ -270,12 +385,15 @@ class BayesNet(object):
         return total_util
 
     def compute_max_utility(self, q):
+        """
+        Searches for maximum utility states
+        :param q: query
+        :return: (\maximum utility value, decision choices)
+        """
         max_util = 0.0
-
         q_undecided = map(lambda y: y[1:], filter(lambda x: x[0] == UNDECIDED, q.nodes))        # query undecided
         n_undecided = map(lambda y: y.name, filter(lambda x: not x.cpt, self.decision_nodes))   # network Undecided
         h_undecided = set(n_undecided).difference(q_undecided)         # hidden undecided
-
         undecided = []
         undecided.extend(q_undecided)   # query vars first
         undecided.extend(h_undecided)   # hidden vars last
@@ -305,6 +423,12 @@ class BayesNet(object):
         return max_util, rational_decisions
 
     def compute_by_enumerate(self, q, table):
+        """
+        Computes probability of a query state by enumerating over JPT table
+        :param q: query state
+        :param table: joint probability table
+        :return:  probability of query state
+        """
         res = 0.0
         for key, val in table.items():
             select = True
@@ -319,14 +443,29 @@ class BayesNet(object):
         return res
 
     def make_decisions(self, decisions):
+        """
+        Makes decisions for decisions nodes
+        :param decisions: dictionary of decision assignments
+        :return:
+        """
         for name, value in decisions.items():
             self.index[name].decide(value)
 
     def undo_decisions(self, decisions):
+        """
+        Clears previously made decisions
+        :param decisions: dictionary of decisions
+        :return:
+        """
         for name in decisions.keys():
             self.index[name].undecide()
 
     def query(self, q):
+        """
+        Queries this bayes net for given query state's probability or utility or maximum expected utility
+        :param q: instance of Query
+        :return: result as per grading instructions of assignment
+        """
         decisions = {}
         if self.decision_nodes:     # assign decisions as per Query
             assignments = dict(map(lambda x: (x[1:], x[0]), q.nodes))
@@ -338,19 +477,21 @@ class BayesNet(object):
         if q._type == MAX_EXP_UTILITY:
             res, choices = self.compute_max_utility(q)
             choices = map(lambda x: x[0], choices)
-
-            print("%s = %s, %s" % (q, choices, format_float(res, 0)))
+            if debug:
+                print("%s = %s, %f" % (q, choices, res))
             res = "%s %s" % (" ".join(choices), format_float(res, 0))
         else:
             table = self.build_jpd_table()
             res = None
             if q._type == PROBABILITY:
                 res = self.compute_by_enumerate(q, table)
-                print ("%s = %s" % (q, format_float(res)))
+                if debug:
+                    print ("%s = %f" % (q, res))
                 res = format_float(res, 2)
             elif q._type == EXP_UTILITY:
                 res = self.compute_utility(q, table)
-                print("%s = %s" % (q, format_float(res, 0)))
+                if debug:
+                    print("%s = %f" % (q, res))
                 res = format_float(res, 0)
         self.undo_decisions(decisions)
         return res
@@ -361,9 +502,13 @@ if __name__ == '__main__':
     parser.add_argument("-i", "--input", help="Path to input file", required=True)
     parser.add_argument("-o", "--output", help="Path to output file", required=False, default="output.txt")
     args = vars(parser.parse_args())
+    debug = True
     qs, net = Parser().parse(args['input'])
+
     with open(args['output'], 'w') as out:
-        for q in qs:
-            res = deepcopy(net).query(q)
+        for i in range(0, len(qs)):
+            res = deepcopy(net).query(qs[i])
             out.write("%s" % res)
-            out.write("\n")
+            if i < len(qs) - 1:         # except last one, graders you !!
+                out.write("\n")
+# END #
