@@ -11,6 +11,7 @@
 from copy import copy, deepcopy
 from argparse import ArgumentParser
 from decimal import Decimal
+from pprint import pprint
 
 # Tokens in input file
 QRY_SEP = "******"
@@ -30,6 +31,7 @@ UNDECIDED = "?"
 
 # Global vars
 debug = False
+
 
 def key_of(value, var):
     """
@@ -129,7 +131,8 @@ class Node(object):
             key.append(key_of(value, self.name))
             return self.cpt[tuple(key)]
         else:
-            print("ERROR: %s%s not implemented %s" % (value, self.name, theta))
+            if debug:
+                print("ERROR: %s%s not known, %s" % (value, self.name, theta))
             return 1.0  # FIXME:
 
     def __repr__(self):
@@ -381,6 +384,8 @@ class BayesNet(object):
                 given.extend(q.given)
             new_q = Query(PROBABILITY, query, given)
             p = self.compute_by_enumerate(new_q, table)
+            if debug:
+                print("%s = %s" % (new_q, p))
             total_util += p * util
         return total_util
 
@@ -412,6 +417,8 @@ class BayesNet(object):
                 new_q = deepcopy(q)
                 choices = new_q.decide(decisions)
                 util = self.compute_utility(new_q, table)
+                if debug:
+                    print("Choices %s = %s " % (choices, util))
                 if util > max_util:
                     max_util = util
                     rational_decisions = choices
@@ -438,8 +445,18 @@ class BayesNet(object):
                     break
             if select:
                 res += val
+
         if q.given and res > 0.0:   # Conditional probability given evidence
-            res /= self.compute_by_enumerate(Query(q._type, q.given), table)
+            denominator = self.compute_by_enumerate(Query(q._type, q.given), table)
+            if debug:
+                print("Joint : %f  / Evidence : %f" % (res, denominator))
+            res /= denominator
+
+        undecided_count = self.count_undecided_nodes(q)  # undecided variables mess up
+        if undecided_count >= 1:  # if there are undecided nides
+            if debug:
+                print("%s Undecided Node count = %d" % (q, undecided_count))
+            res /= 2 * undecided_count  # reduce to half
         return res
 
     def make_decisions(self, decisions):
@@ -459,6 +476,14 @@ class BayesNet(object):
         """
         for name in decisions.keys():
             self.index[name].undecide()
+
+    def count_undecided_nodes(self, query):
+        assignments = dict(map(lambda x: (x[1:], x[0]), query.nodes))
+        num_assignments = 0
+        for k in assignments.keys():
+            if self.index[k]._type == DEC_NODE:
+                num_assignments += 1
+        return len(self.decision_nodes) - num_assignments
 
     def query(self, q):
         """
@@ -486,7 +511,12 @@ class BayesNet(object):
             if q._type == PROBABILITY:
                 res = self.compute_by_enumerate(q, table)
                 if debug:
-                    print ("%s = %f" % (q, res))
+                    pprint(table)
+                    sum = 0.0
+                    for v in table.values():
+                        sum += v
+                    print("Sum = %f" % sum)
+                    print("%s = %f" % (q, res))
                 res = format_float(res, 2)
             elif q._type == EXP_UTILITY:
                 res = self.compute_utility(q, table)
@@ -502,7 +532,6 @@ if __name__ == '__main__':
     parser.add_argument("-i", "--input", help="Path to input file", required=True)
     parser.add_argument("-o", "--output", help="Path to output file", required=False, default="output.txt")
     args = vars(parser.parse_args())
-    debug = True
     qs, net = Parser().parse(args['input'])
 
     with open(args['output'], 'w') as out:
